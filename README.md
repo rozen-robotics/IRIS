@@ -13,6 +13,14 @@ A simple high performance android application that captures feed from camera and
 3. Connect your Android smartphone or setup simulator.
 4. Click `Run 'app'`.
 
+## Acceleration
+
+App uses NPU and GPU acceletaion to increase neural network performace. Be sure to use smartphone with good NPU/GPU chip. CPU runtime was not tested yet.
+
+Prefer using NNAPI capatable devices. Modern smartphones often has neural processing unit. Check more info at your manufacturer documentation.
+
+App performance was tested on `Google Pixel 6a`.
+
 ## Dataset
 
 [Download link](https://app.roboflow.com/pedro-etuzo/iris-qcubp/4)
