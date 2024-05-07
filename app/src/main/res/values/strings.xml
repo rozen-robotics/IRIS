@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">VisionRide</string>
+    <string name="output_image_description">Gaze control for wheelchairs</string>
+    <string name="process_button_text">YOLO goes brr</string>
+</resources>
