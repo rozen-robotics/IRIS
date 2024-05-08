@@ -13,6 +13,7 @@ firebaseCrashlytics = "16.1.0"
 googleGmsGoogleServices = "4.4.1"
 googleFirebaseCrashlytics = "2.9.9"
 datastoreCoreAndroid = "1.1.1"
+firebaseMlModeldownloaderKtx = "25.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -32,6 +33,7 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3" 
 androidx-camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "cameraCore" }
 firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics", version = "19.0.0" }
 androidx-datastore-core-android = { group = "androidx.datastore", name = "datastore-core-android", version.ref = "datastoreCoreAndroid" }
+firebase-ml-modeldownloader-ktx = { group = "com.google.firebase", name = "firebase-ml-modeldownloader-ktx", version.ref = "firebaseMlModeldownloaderKtx" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

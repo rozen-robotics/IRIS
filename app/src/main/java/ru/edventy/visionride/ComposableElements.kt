@@ -48,31 +48,64 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.android.gms.tflite.client.TfLiteInitializationOptions
+import com.google.firebase.ml.modeldownloader.CustomModel
+import com.google.firebase.ml.modeldownloader.CustomModelDownloadConditions
+import com.google.firebase.ml.modeldownloader.DownloadType
+import com.google.firebase.ml.modeldownloader.FirebaseModelDownloader
 import com.jamal.composeprefs3.ui.PrefsScreen
+import com.jamal.composeprefs3.ui.prefs.CheckBoxPref
 import com.jamal.composeprefs3.ui.prefs.EditTextPref
 import org.tensorflow.lite.task.gms.vision.TfLiteVision
+import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+
+val BLOCK_CLOUD_MODEL_KEY = booleanPreferencesKey("blockCloudModel")
 
 @Composable
 fun MainScreen(dataStore: DataStore<Preferences>){
     val navController = rememberNavController()
+    var modelFile by remember { mutableStateOf<File?>(null) }
+
+    val conditions = CustomModelDownloadConditions.Builder()
+//        .requireWifi()  // Also possible: .requireCharging() and .requireDeviceIdle()
+        .build()
+    FirebaseModelDownloader.getInstance()
+        .getModel("Eye-Gaze-Detector", DownloadType.LOCAL_MODEL_UPDATE_IN_BACKGROUND,
+            conditions)
+        .addOnSuccessListener { model: CustomModel? ->
+            // Download complete. Depending on your app, you could enable the ML
+            // feature, or switch from the local model to the remote model, etc.
+
+            // The CustomModel object contains the local path of the model file,
+            // which you can use to instantiate a TensorFlow Lite interpreter.
+
+            if(model != null){
+                modelFile = model.file
+
+                Log.i("Firebase NN", "Model downloaded: " + modelFile?.name)
+            }
+        }
+        .addOnFailureListener{
+            Log.e("Firebase NN", "Failed to download model.")
+        }
 
     NavHost(navController = navController, startDestination = "loading"){
         composable("loading") { LoadingPage(navController) }
         composable("error") { ErrorPage() }
-        composable("camera") { CameraPage(navController) }
+        composable("camera") { CameraPage(navController, dataStore, modelFile) }
         composable("settings") { SettingsPage(navController, dataStore) }
     }
 }
 
 @Composable
-fun LoadingPage(nav: NavHostController){
+fun LoadingPage(nav: NavHostController) {
     val context = LocalContext.current
 
     val options = TfLiteInitializationOptions.builder()
@@ -100,7 +133,10 @@ fun LoadingPage(nav: NavHostController){
         Image(
             imageVector = ImageVector.vectorResource(R.drawable.logogram),
             contentDescription = "Rozen logo",
-            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(50.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(50.dp)
         )
     }
 }
@@ -117,7 +153,7 @@ fun ErrorPage(){
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CameraPage(nav: NavHostController){
+fun CameraPage(nav: NavHostController, dataStore: DataStore<Preferences>, modelFile: File? = null){
     val context = LocalContext.current
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
     val detector = remember { TFObjectDetector() }
@@ -125,8 +161,20 @@ fun CameraPage(nav: NavHostController){
         mutableStateOf(CameraSelector.DEFAULT_BACK_CAMERA)
     }
 
-    LaunchedEffect(null) {
-        detector.initialize(context, detector.options)
+    LaunchedEffect(modelFile) {
+        dataStore.data.collect { data ->
+            val blockCloudModel = data[BLOCK_CLOUD_MODEL_KEY]
+
+            if(modelFile == null || blockCloudModel == true){
+                Log.i("Detector", "Using local model.")
+                detector.initialize(context, detector.options)
+            }
+            else{
+                Log.i("Detector", "Using cloud model.")
+                detector.initialize(detector.options, modelFile)
+            }
+        }
+
     }
 
     Scaffold(
@@ -210,6 +258,13 @@ fun SettingsPage(nav: NavHostController, dataStore: DataStore<Preferences>){
                         summary = "ROS server address",
                         dialogTitle = "Wheelchair IP",
                         dialogMessage = "Put Wheelchair server IP here:"
+                    ) }
+                }
+                prefsGroup("AI & Models"){
+                    prefsItem { CheckBoxPref(
+                        key = BLOCK_CLOUD_MODEL_KEY.name,
+                        title = "Use local AI model",
+                        summary = "Downgrade to builtin model and prevent cloud download",
                     ) }
                 }
             }
