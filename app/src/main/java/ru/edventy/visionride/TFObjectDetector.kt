@@ -11,11 +11,7 @@ import org.tensorflow.lite.support.image.ops.Rot90Op
 import org.tensorflow.lite.task.core.BaseOptions
 import org.tensorflow.lite.task.gms.vision.detector.Detection
 import org.tensorflow.lite.task.gms.vision.detector.ObjectDetector
-import com.google.firebase.perf.FirebasePerformance;
 import com.google.firebase.perf.ktx.performance
-import com.google.firebase.perf.metrics.AddTrace
-import com.google.firebase.perf.metrics.Trace;
-import java.util.Timer
 
 class NotInitialized(message: String): Exception(message)
 
@@ -40,7 +36,7 @@ class TFObjectDetector {
     var listener: ((List<Detection>, Bitmap, Int)->Unit)? = null
 
     var statsFrameCounter = 0
-    var detect_trace = Firebase.performance.newTrace("detect_trace")
+    var detectTrace = Firebase.performance.newTrace("detect_trace")
     var analyticsInterval = 120
 
     /**
@@ -105,14 +101,14 @@ class TFObjectDetector {
     fun detectObjects(image: TensorImage): List<Detection> {
         throwErrorIfNotInitialized()
         if(statsFrameCounter % analyticsInterval == 0){
-            detect_trace = Firebase.performance.newTrace("detect_trace")
-            detect_trace.start()
+            detectTrace = Firebase.performance.newTrace("detect_trace")
+            detectTrace.start()
         }
 
         val objects = objectDetector.detect(image)
 
         if(statsFrameCounter % analyticsInterval == 0){
-            detect_trace.stop()
+            detectTrace.stop()
             statsFrameCounter = -1
         }
         statsFrameCounter++
