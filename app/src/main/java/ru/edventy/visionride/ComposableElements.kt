@@ -15,6 +15,17 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults.topAppBarColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,8 +39,97 @@ import java.util.concurrent.Executor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.google.android.gms.tflite.client.TfLiteInitializationOptions
+import org.tensorflow.lite.task.gms.vision.TfLiteVision
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+
+@Composable
+fun MainScreen(){
+    val navController = rememberNavController()
+
+    NavHost(navController = navController, startDestination = "camera"){
+        composable("camera") { CameraPage(navController) }
+        composable("settings") { SettingsPage(navController) }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CameraPage(nav: NavHostController){
+    val context = LocalContext.current
+    val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
+    val detector = remember { TFObjectDetector() }
+
+    LaunchedEffect(null) {
+        context.startDetector(detector)
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                colors = topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.primary,
+                ),
+                title = {
+                    Text("IRIS")
+                },
+                actions = {
+                    IconButton(onClick = { nav.navigate("settings") }) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "Settings"
+                        )
+                    }
+                }
+            )
+        }
+    ){ innerPadding ->
+        CameraAI(cameraExecutor, detector, Modifier.padding(innerPadding))
+    }
+}
+
+@Composable
+fun SettingsPage(nav: NavHostController){
+    Text("Settings", modifier = Modifier.fillMaxSize())
+}
+
+enum class HardwareAccelerator {
+    CPU,
+    GPU,
+    NNAPIDevice,
+    UNINITIALIZED
+}
+
+suspend fun Context.startDetector(detector: TFObjectDetector): HardwareAccelerator = suspendCoroutine { continuation ->
+    val options = TfLiteInitializationOptions.builder()
+        .setEnableGpuDelegateSupport(true)
+        .build()
+
+    TfLiteVision.initialize(this, options).addOnSuccessListener {
+        println("GPU goes brr")
+        detector.initialize(this, detector.options)
+        continuation.resume(HardwareAccelerator.GPU)
+    }.addOnFailureListener {
+        // Called if the GPU Delegate is not supported on the device
+        TfLiteVision.initialize(this).addOnSuccessListener {
+            println("CPU goes brr")
+            detector.initialize(this, detector.options)
+            continuation.resume(HardwareAccelerator.CPU)
+        }.addOnFailureListener{
+            continuation.resume(HardwareAccelerator.UNINITIALIZED)
+            println("TfLiteVision failed to initialize: "
+                    + it.message)
+        }
+    }
+}
 
 suspend fun Context.getCameraProvider(): ProcessCameraProvider = suspendCoroutine { continuation ->
     ProcessCameraProvider.getInstance(this).also { cameraProvider ->
@@ -42,7 +142,8 @@ suspend fun Context.getCameraProvider(): ProcessCameraProvider = suspendCoroutin
 @Composable
 fun CameraAI(
     cameraExecutor: Executor,
-    detector: TFObjectDetector
+    detector: TFObjectDetector,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -140,6 +241,10 @@ fun CameraAI(
         previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
     }
 
-    AndroidView({ previewView }, modifier = Modifier.fillMaxSize())
-    Image(overlayBitmap, "overlay", modifier = Modifier.fillMaxSize())
+    AndroidView({ previewView }, modifier = Modifier
+        .fillMaxSize()
+        .then(modifier))
+    Image(overlayBitmap, "overlay", modifier = Modifier
+        .fillMaxSize()
+        .then(modifier))
 }
