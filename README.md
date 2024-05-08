@@ -21,6 +21,10 @@ Prefer using NNAPI capatable devices. Modern smartphones often has neural proces
 
 App performance was tested on `Google Pixel 6a`.
 
+## Firebase Cloud Configuration
+
+> Will be later.
+
 ## Dataset
 
 [Download link](https://app.roboflow.com/pedro-etuzo/iris-qcubp/4)
@@ -49,7 +53,11 @@ https://colab.research.google.com/drive/1QOh-vjV1L-7QJXVIwnOjXFZuTnrFYMSL?usp=sh
 
 ## Update Model
 
-After training you can upload your model to application. 
+AI model updates automatically using Firebase Cloud. So, you need to configure it first.
+
+But you can upload your model to application locally. 
+
+First, go to Settings and enable `Use local AI model` to stop getting updates from cloud.
 
 Put your model to `assets` folder under name `model1.tflite`. 
 
