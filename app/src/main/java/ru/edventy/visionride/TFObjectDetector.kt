@@ -2,6 +2,7 @@ package ru.edventy.visionride
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.util.Log
 import androidx.camera.core.ImageProxy
 import com.google.firebase.ktx.Firebase
@@ -15,11 +16,18 @@ import com.google.firebase.perf.ktx.performance
 
 class NotInitialized(message: String): Exception(message)
 
+private fun Bitmap.flip(x: Float, y: Float, cx: Float, cy: Float): Bitmap {
+    val matrix = Matrix().apply { postScale(x, y, cx, cy) }
+    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+}
+
 /**
  * Object detector.
  */
 class TFObjectDetector {
     private lateinit var objectDetector: ObjectDetector
+
+    var flip = false
 
     var initialized = false
         private set
@@ -87,6 +95,10 @@ class TFObjectDetector {
         //Copy out RGB bits to the shared bitmap buffer
         image.use {
             cameraBitmap?.copyPixelsFromBuffer(image.planes[0].buffer)
+        }
+
+        if(flip) {
+            cameraBitmap = cameraBitmap!!.flip(1f, -1f,cameraBitmap!!.width / 2f, cameraBitmap!!.height / 2f)
         }
 
         imageRotation = image.imageInfo.rotationDegrees
