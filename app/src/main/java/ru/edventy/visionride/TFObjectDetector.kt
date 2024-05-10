@@ -13,6 +13,7 @@ import org.tensorflow.lite.task.core.BaseOptions
 import org.tensorflow.lite.task.gms.vision.detector.Detection
 import org.tensorflow.lite.task.gms.vision.detector.ObjectDetector
 import com.google.firebase.perf.ktx.performance
+import com.google.firebase.perf.metrics.AddTrace
 import java.io.File
 
 class NotInitialized(message: String): Exception(message)
@@ -70,6 +71,7 @@ class TFObjectDetector {
     /**
      * Initialize TFLite ObjectDetector. Must be called before any NN operations.
      */
+    @AddTrace(name = "model_load_trace")
     fun initialize(
         context: Context,
         options: ObjectDetector.ObjectDetectorOptions,

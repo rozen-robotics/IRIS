@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.util.Log
+import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -49,52 +50,71 @@ import androidx.core.content.ContextCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.android.gms.tflite.client.TfLiteInitializationOptions
+import com.google.firebase.ktx.Firebase
 import com.google.firebase.ml.modeldownloader.CustomModel
 import com.google.firebase.ml.modeldownloader.CustomModelDownloadConditions
 import com.google.firebase.ml.modeldownloader.DownloadType
 import com.google.firebase.ml.modeldownloader.FirebaseModelDownloader
+import com.google.firebase.perf.ktx.performance
 import com.jamal.composeprefs3.ui.PrefsScreen
 import com.jamal.composeprefs3.ui.prefs.CheckBoxPref
 import com.jamal.composeprefs3.ui.prefs.EditTextPref
+import com.jamal.composeprefs3.ui.prefs.ListPref
+import kotlinx.coroutines.flow.map
 import org.tensorflow.lite.task.gms.vision.TfLiteVision
 import java.io.File
+import java.io.FileNotFoundException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 val BLOCK_CLOUD_MODEL_KEY = booleanPreferencesKey("blockCloudModel")
+val CLOUD_MODEL_NAME_KEY = stringPreferencesKey("cloudModelName")
+
+const val MODEL_NAME_EFFICIENTDET_1 = "Eye-Gaze-Detector"
+const val MODEL_NAME_EFFICIENTDET_3 = "Eye-Gaze-Detector-3"
+const val MODEL_NAME_YOLO_1 = "EGD-YOLO"
 
 @Composable
 fun MainScreen(dataStore: DataStore<Preferences>){
+    val cloudModelNameFlow = dataStore.data.map { it[CLOUD_MODEL_NAME_KEY] ?: MODEL_NAME_EFFICIENTDET_1 }
+
     val navController = rememberNavController()
     var modelFile by remember { mutableStateOf<File?>(null) }
 
     val conditions = CustomModelDownloadConditions.Builder()
-//        .requireWifi()  // Also possible: .requireCharging() and .requireDeviceIdle()
         .build()
-    FirebaseModelDownloader.getInstance()
-        .getModel("Eye-Gaze-Detector", DownloadType.LOCAL_MODEL_UPDATE_IN_BACKGROUND,
-            conditions)
-        .addOnSuccessListener { model: CustomModel? ->
-            // Download complete. Depending on your app, you could enable the ML
-            // feature, or switch from the local model to the remote model, etc.
 
-            // The CustomModel object contains the local path of the model file,
-            // which you can use to instantiate a TensorFlow Lite interpreter.
+    LaunchedEffect(cloudModelNameFlow) {
+        cloudModelNameFlow.collect{ cloudModelName ->
+            Log.i("Firebase NN", "Cloud model variant: $cloudModelName.")
 
-            if(model != null){
-                modelFile = model.file
+            val modelDownloadTrace = Firebase.performance.newTrace("model_download_trace")
+            modelDownloadTrace.start()
+            FirebaseModelDownloader.getInstance()
+                .getModel(cloudModelName, DownloadType.LOCAL_MODEL_UPDATE_IN_BACKGROUND,
+                    conditions)
+                .addOnSuccessListener { model: CustomModel? ->
+                    modelDownloadTrace.stop()
+                    modelDownloadTrace.putAttribute("model", cloudModelName)
+                    if(model != null){
+                        modelFile = model.file
 
-                Log.i("Firebase NN", "Model downloaded: " + modelFile?.name)
-            }
+                        Log.i("Firebase NN", "Model downloaded: " + modelFile?.name)
+                    }
+                }
+                .addOnFailureListener{
+                    modelDownloadTrace.stop()
+                    modelDownloadTrace.putAttribute("model", "FAILED")
+                    Log.e("Firebase NN", "Failed to download model.")
+                }
         }
-        .addOnFailureListener{
-            Log.e("Firebase NN", "Failed to download model.")
-        }
+    }
 
     NavHost(navController = navController, startDestination = "loading"){
         composable("loading") { LoadingPage(navController) }
@@ -113,15 +133,23 @@ fun LoadingPage(nav: NavHostController) {
         .build()
 
     LaunchedEffect(null){
+        val tfliteInitTrace = Firebase.performance.newTrace("tflite_init_trace")
+        tfliteInitTrace.start()
         TfLiteVision.initialize(context, options).addOnSuccessListener {
+            tfliteInitTrace.stop()
+            tfliteInitTrace.putAttribute("accelerator", "GPU/TPU")
             println("GPU goes brr")
             nav.navigate("camera")
         }.addOnFailureListener {
             // Called if the GPU Delegate is not supported on the device
+            tfliteInitTrace.stop()
+            tfliteInitTrace.putAttribute("accelerator", "CPU")
             TfLiteVision.initialize(context).addOnSuccessListener {
                 println("CPU goes brr")
                 nav.navigate("camera")
             }.addOnFailureListener{
+                tfliteInitTrace.stop()
+                tfliteInitTrace.putAttribute("accelerator", "NONE")
                 println("TfLiteVision failed to initialize: "
                         + it.message)
                 nav.navigate("error")
@@ -155,26 +183,32 @@ fun ErrorPage(){
 @Composable
 fun CameraPage(nav: NavHostController, dataStore: DataStore<Preferences>, modelFile: File? = null){
     val context = LocalContext.current
-    val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
+    val blockCloudModelFlow = dataStore.data.map { it[BLOCK_CLOUD_MODEL_KEY] ?: false }
+
     val detector = remember { TFObjectDetector() }
+    val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
     var cameraSelector by remember {
         mutableStateOf(CameraSelector.DEFAULT_BACK_CAMERA)
     }
 
-    LaunchedEffect(modelFile) {
-        dataStore.data.collect { data ->
-            val blockCloudModel = data[BLOCK_CLOUD_MODEL_KEY]
-
-            if(modelFile == null || blockCloudModel == true){
-                Log.i("Detector", "Using local model.")
+    LaunchedEffect(null) {
+        blockCloudModelFlow.collect { blockCloudModel ->
+            Toast.makeText(context, "Loading AI...", Toast.LENGTH_SHORT).show()
+            if(modelFile == null || blockCloudModel){
+                Log.i("Detector NN", "Using local model.")
                 detector.initialize(context, detector.options)
             }
             else{
-                Log.i("Detector", "Using cloud model.")
-                detector.initialize(detector.options, modelFile)
+                Log.i("Detector NN", "Using cloud model.")
+                try{
+                    detector.initialize(detector.options, modelFile)
+                }
+                catch (e: FileNotFoundException){
+                    Log.i("Detector NN", "Failed to open cloud model file. Using local model.")
+                    detector.initialize(context, detector.options)
+                }
             }
         }
-
     }
 
     Scaffold(
@@ -261,6 +295,17 @@ fun SettingsPage(nav: NavHostController, dataStore: DataStore<Preferences>){
                     ) }
                 }
                 prefsGroup("AI & Models"){
+                    prefsItem {
+                        ListPref(key = CLOUD_MODEL_NAME_KEY.name,
+                            title = "Cloud model variant",
+                            summary = "Choose between detection performance and accuracy",
+                            entries = mapOf(
+                                MODEL_NAME_EFFICIENTDET_1 to "Fast",
+                                MODEL_NAME_EFFICIENTDET_3 to "Accurate",
+                                MODEL_NAME_YOLO_1 to "YOLO (very accurate)"
+                            )
+                        )
+                    }
                     prefsItem { CheckBoxPref(
                         key = BLOCK_CLOUD_MODEL_KEY.name,
                         title = "Use local AI model",
